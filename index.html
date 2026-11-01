@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador Avanzado de Monitor Hemodinámico UCI - Enfermería Crítica</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Share Tech Mono (Estilo pantalla médica digital) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+  <style>
+    /* Estilos de fuentes médicas y CRT/LCD */
+    .font-mono-lcd {
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .font-monitor {
+      font-family: 'Chakra Petch', sans-serif;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #05070a;
+      color: #e2e8f0;
+      user-select: none;
+      overflow-x: hidden;
+    }
+
+    /* Efecto de brillo de fósforo de monitor de paciente */
+    .glow-green {
+      text-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
+    }
+    .glow-red {
+      text-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
+    }
+    .glow-cyan {
+      text-shadow: 0 0 10px rgba(6, 182, 212, 0.7);
+    }
+    .glow-yellow {
+      text-shadow: 0 0 10px rgba(234, 179, 8, 0.7);
+    }
+
+    /* Animación de latido cardíaco */
+    @keyframes heartbeat {
+      0% { transform: scale(1); }
+      15% { transform: scale(1.35); }
+      30% { transform: scale(1); }
+      45% { transform: scale(1.2); }
+      60% { transform: scale(1); }
+    }
+    .beating {
+      animation: heartbeat 0.6s ease-in-out;
+    }
+
+    /* Parpadeo de alarma visual */
+    @keyframes alarm-flash-red {
+      0%, 100% { background-color: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.8); }
+      50% { background-color: rgba(239, 68, 68, 0.45); border-color: #ef4444; }
+    }
+    @keyframes alarm-flash-yellow {
+      0%, 100% { background-color: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.6); }
+      50% { background-color: rgba(234, 179, 8, 0.35); border-color: #eab308; }
+    }
+    .alarm-active-red {
+      animation: alarm-flash-red 0.8s infinite;
+    }
+    .alarm-active-yellow {
+      animation: alarm-flash-yellow 1.2s infinite;
+    }
+
+    /* Scrollbar personalizada para paneles clínicos */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d14;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    /* Rejilla de osciloscopio médico */
+    .bg-medical-grid {
+      background-color: #070a0f;
+      background-image: 
+        linear-gradient(rgba(30, 41, 59, 0.25) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 41, 59, 0.25) 1px, transparent 1px),
+        linear-gradient(rgba(30, 41, 59, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 41, 59, 0.08) 1px, transparent 1px);
+      background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
+      background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col bg-[#05070e] text-slate-100">
+
+  <!-- ========================================================================= -->
+  <!-- BARRA SUPERIOR: ESTADO DEL PACIENTE Y CONTROL DEL MONITOR                 -->
+  <!-- ========================================================================= -->
+  <header class="bg-[#0b101b] border-b border-slate-800 px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs md:text-sm shadow-lg">
+    <!-- Información del Paciente -->
+    <div class="flex items-center space-x-3">
+      <div class="bg-blue-900/60 border border-blue-500/50 px-2.5 py-1 rounded text-blue-300 font-bold font-mono tracking-wider">
+        UCI-04
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-white tracking-wide">GONZÁLEZ M., CARLOS</span>
+          <span class="text-slate-400">| ID: 4892011</span>
+          <span class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px] font-semibold">ADULTO CRÍTICO</span>
+        </div>
+        <div class="text-[11px] text-slate-400 flex items-center gap-2">
+          <span>Edad: 64a</span>
+          <span>•</span>
+          <span>SC: 1.88 m² (76 kg / 174 cm)</span>
+          <span>•</span>
+          <span id="system-clock" class="text-emerald-400 font-mono">--:--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Banner central de Alarma Clínica -->
+    <div id="alarm-banner" class="flex-1 max-w-xl mx-2 py-1 px-3 rounded flex items-center justify-between bg-slate-900/80 border border-slate-700 text-slate-300 transition-all duration-300">
+      <div class="flex items-center space-x-2">
+        <span id="alarm-status-icon" class="text-emerald-400 text-base">●</span>
+        <span id="alarm-banner-text" class="font-bold tracking-wider text-xs md:text-sm">RITMO SINUSAL NORMAL - PARÁMETROS EN RANGO</span>
+      </div>
+      <span id="alarm-priority-tag" class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">NORMAL</span>
+    </div>
+
+    <!-- Controles Rápidos del Monitor -->
+    <div class="flex items-center space-x-2">
+      <!-- Botón Habilitar / Deshabilitar Audio -->
+      <button id="btn-toggle-audio" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 border border-slate-600 px-2.5 py-1.5 rounded transition">
+        <span id="audio-icon">🔇</span>
+        <span id="audio-text" class="font-medium text-[11px]">Sonido: OFF</span>
+      </button>
+
+      <!-- Botón Silenciar Alarmas (120s) -->
+      <button id="btn-silence-alarm" class="flex items-center space-x-1.5 bg-amber-950/40 hover:bg-amber-900/60 active:bg-amber-800 border border-amber-600/60 text-amber-300 px-2.5 py-1.5 rounded transition">
+        <span>🔕</span>
+        <span id="silence-text" class="font-medium text-[11px]">Silenciar (120s)</span>
+      </button>
+
+      <!-- Botón Congelar Pantalla (Freeze) -->
+      <button id="btn-freeze" class="flex items-center space-x-1.5 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/60 text-indigo-300 px-2.5 py-1.5 rounded transition">
+        <span id="freeze-icon">⏸</span>
+        <span id="freeze-text" class="font-medium text-[11px]">Congelar</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- NAVEGACIÓN POR PESTAÑAS                                                   -->
+  <!-- ========================================================================= -->
+  <nav class="bg-[#080d17] border-b border-slate-800/80 px-4 flex space-x-1 overflow-x-auto text-xs md:text-sm">
+    <button class="nav-tab active-tab px-4 py-2.5 font-semibold border-b-2 border-emerald-500 text-emerald-400 bg-slate-900/50 flex items-center space-x-2 transition" data-target="tab-monitor">
+      <span>📈</span>
+      <span>Monitor Multiparamétrico</span>
+    </button>
+    <button class="nav-tab px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-600 flex items-center space-x-2 transition" data-target="tab-ritmos">
+      <span>⚡</span>
+      <span>Arritmias y Escenarios Clínicos</span>
+    </button>
+    <button class="nav-tab px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-600 flex items-center space-x-2 transition" data-target="tab-parametros">
+      <span>🎛</span>
+      <span>Modificar Parámetros y Límites</span>
+    </button>
+    <button class="nav-tab px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-600 flex items-center space-x-2 transition" data-target="tab-guia">
+      <span>🎓</span>
+      <span>Guía Clínica de Enfermería UCI</span>
+    </button>
+  </nav>
+
+  <!-- ========================================================================= -->
+  <!-- CONTENIDO PRINCIPAL                                                       -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 p-2 md:p-3 relative overflow-hidden flex flex-col">
+
+    <!-- --------------------------------------------------------------------- -->
+    <!-- PESTAÑA 1: PANTALLA PRINCIPAL DEL MONITOR (TRAZADOS Y NÚMEROS)        -->
+    <!-- --------------------------------------------------------------------- -->
+    <div id="tab-monitor" class="tab-pane flex-1 flex flex-col gap-2">
+      <div id="monitor-wrapper" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-2 bg-black rounded-lg border-2 border-slate-800 p-2 shadow-2xl relative overflow-hidden">
+        
+        <!-- COLUMNA IZQUIERDA: ÁREA DE CURVAS FISIOLÓGICAS (CANVAS) -->
+        <div class="lg:col-span-9 flex flex-col bg-medical-grid rounded relative overflow-hidden border border-slate-900 min-h-[460px] lg:min-h-[580px]">
+          
+          <!-- Etiquetas flotantes y calibración -->
+          <div class="absolute top-2 left-3 z-10 text-[10px] text-slate-400 pointer-events-none flex space-x-6 font-mono">
+            <span>VEL: 25 mm/s</span>
+            <span>GANANCIA: 10 mm/mV</span>
+            <span>FILTRO: DIAGNÓSTICO (0.05 - 150 Hz)</span>
+          </div>
+
+          <!-- Canvas unificado para barrido a 60 FPS -->
+          <canvas id="waveform-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+          <!-- Tira indicadora de modo Congelado -->
+          <div id="freeze-indicator" class="hidden absolute top-3 right-4 z-20 bg-amber-500/90 text-black font-bold px-3 py-1 rounded shadow-lg text-xs animate-pulse tracking-wider">
+            PAUSA / TRAZADO CONGELADO (FREEZE)
+          </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: BLOQUES NUMÉRICOS DIGITALES (ESTILO INTELLIVUE) -->
+        <div class="lg:col-span-3 flex flex-col justify-between gap-2 text-white">
+          
+          <!-- CAJA 1: ELECTROCARDIOGRAMA (ECG / FC) -->
+          <div class="flex-1 bg-[#091510] border-l-4 border-emerald-500 rounded p-2.5 flex flex-col justify-between shadow">
+            <div class="flex items-center justify-between text-emerald-400">
+              <div class="flex items-center space-x-1.5">
+                <span class="text-xs font-bold tracking-wider">ECG DII</span>
+                <span id="heart-icon" class="text-red-500 text-sm">♥</span>
+              </div>
+              <div class="text-[11px] font-mono text-emerald-500/80">
+                LÍM: <span id="lim-fc-min">50</span> - <span id="lim-fc-max">120</span>
+              </div>
+            </div>
+            <div class="flex items-baseline justify-between my-auto">
+              <span class="text-emerald-500 text-xs font-mono">lpm</span>
+              <span id="num-hr" class="text-5xl xl:text-6xl font-monitor font-bold text-emerald-400 glow-green tracking-tight">75</span>
+            </div>
+            <div class="text-[10px] text-emerald-400/70 flex justify-between font-mono border-t border-emerald-950/80 pt-1">
+              <span>ST II: +0.02 mV</span>
+              <span id="ecg-rhythm-tag" class="font-bold text-emerald-300">SINUSAL</span>
+            </div>
+          </div>
+
+          <!-- CAJA 2: PRESIÓN ARTERIAL INVASIVA (PAI / LÍNEA ART) -->
+          <div class="flex-1 bg-[#180d10] border-l-4 border-red-500 rounded p-2.5 flex flex-col justify-between shadow">
+            <div class="flex items-center justify-between text-red-400">
+              <div class="flex items-center space-x-1.5">
+                <span class="text-xs font-bold tracking-wider">ART (PAI)</span>
+                <span class="text-[9px] bg-red-950 text-red-300 px-1 rounded">RADIAL D</span>
+              </div>
+              <div class="text-[11px] font-mono text-red-500/80">
+                PAM LÍM: <span id="lim-pam-min">65</span>
+              </div>
+            </div>
+            <div class="flex items-baseline justify-between my-auto">
+              <div class="text-left font-mono">
+                <span class="text-red-400 text-xs block">mmHg</span>
+                <span class="text-red-300 text-sm">PAM: </span>
+                <span id="num-pam" class="text-2xl font-bold font-monitor text-red-400 glow-red">(93)</span>
+              </div>
+              <div class="text-right">
+                <span id="num-sys-dia" class="text-4xl xl:text-5xl font-monitor font-bold text-red-500 glow-red tracking-tight">120/80</span>
+              </div>
+            </div>
+            <div class="text-[10px] text-red-400/70 flex justify-between font-mono border-t border-red-950/80 pt-1">
+              <span>Pp: <span id="num-pp">40</span> mmHg</span>
+              <span>Dicrotismo: OK</span>
+            </div>
+          </div>
+
+          <!-- CAJA 3: PULSIOXIMETRÍA (SpO2 / PLETH) -->
+          <div class="flex-1 bg-[#09151a] border-l-4 border-cyan-500 rounded p-2.5 flex flex-col justify-between shadow">
+            <div class="flex items-center justify-between text-cyan-400">
+              <span class="text-xs font-bold tracking-wider">SpO2 PLETH</span>
+              <div class="text-[11px] font-mono text-cyan-500/80">
+                LÍM: <span id="lim-spo2-min">90</span> %
+              </div>
+            </div>
+            <div class="flex items-baseline justify-between my-auto">
+              <div class="text-xs font-mono text-cyan-400">
+                <span>PI: <span id="num-pi" class="text-cyan-300 font-bold">3.8</span>%</span>
+                <span class="block text-[10px] text-cyan-500/70">Perfus. Óptima</span>
+              </div>
+              <div class="flex items-baseline">
+                <span id="num-spo2" class="text-5xl xl:text-6xl font-monitor font-bold text-cyan-400 glow-cyan">99</span>
+                <span class="text-cyan-400 text-sm font-bold ml-1">%</span>
+              </div>
+            </div>
+            <div class="text-[10px] text-cyan-400/70 flex justify-between font-mono border-t border-cyan-950/80 pt-1">
+              <span>Curva de Pulso</span>
+              <span>Tono Audio Oxi: Activo</span>
+            </div>
+          </div>
+
+          <!-- CAJA 4: RESPIRACIÓN POR IMPEDANCIA (RESP / FR) -->
+          <div class="flex-1 bg-[#19160a] border-l-4 border-yellow-500 rounded p-2.5 flex flex-col justify-between shadow">
+            <div class="flex items-center justify-between text-yellow-400">
+              <span class="text-xs font-bold tracking-wider">RESP (IMP)</span>
+              <div class="text-[11px] font-mono text-yellow-500/80">
+                LÍM: 8 - 30
+              </div>
+            </div>
+            <div class="flex items-baseline justify-between my-auto">
+              <span class="text-yellow-400 text-xs font-mono">rpm</span>
+              <span id="num-rr" class="text-5xl xl:text-6xl font-monitor font-bold text-yellow-400 glow-yellow">14</span>
+            </div>
+            <div class="text-[10px] text-yellow-400/70 flex justify-between font-mono border-t border-yellow-950/80 pt-1">
+              <span>Patrón: Eupneico</span>
+              <span>Apnea Alarma: 20s</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- --------------------------------------------------------------------- -->
+    <!-- PESTAÑA 2: SELECTOR DE ARRITMIAS Y ESCENARIOS CLÍNICOS UCI            -->
+    <!-- --------------------------------------------------------------------- -->
+    <div id="tab-ritmos" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div class="max-w-6xl mx-auto space-y-4 py-2">
+        
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <span class="text-amber-400 text-xl">⚡</span>
+              <span>Catálogo de Arritmias Cardíacas y Emergencias Hemodinámicas</span>
+            </h2>
+            <p class="text-xs md:text-sm text-slate-400 mt-1">
+              Seleccione un ritmo para cargar en tiempo real sus parámetros fisiopatológicos, morfología electrocardiográfica, curva arterial invasiva sincronizada y repercusión clínica.
+            </p>
+          </div>
+          <span class="bg-emerald-950 text-emerald-400 border border-emerald-700/60 text-xs px-3 py-1.5 rounded-full font-mono font-bold self-start md:self-auto">
+            10 Ritmos Fisiológicos y Letales
+          </span>
+        </div>
+
+        <!-- Cuadrícula de Arritmias -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" id="rhythm-buttons-container">
+          <!-- Tarjeta 1: Sinusal Normal -->
+          <button onclick="setRhythm('sinus')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-emerald-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-emerald-400 text-sm group-hover:text-emerald-300">Ritmo Sinusal Normal</span>
+                <span class="bg-emerald-950/70 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">ESTABLE</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Conducción AV 1:1, onda P positiva en DII, QRS estrecho (&lt;100 ms). Hemodinámica óptima sin soporte vasoactivo.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-emerald-400">75 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">120/80 (93)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">99%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 2: Bradicardia Sinusal -->
+          <button onclick="setRhythm('bradycardia')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-blue-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-blue-400 text-sm group-hover:text-blue-300">Bradicardia Sinusal</span>
+                <span class="bg-blue-950/70 text-blue-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">AVISO</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Descarga del nodo SA lenta (&lt;50 lpm). Causa: deportistas, fármacos betabloqueantes o hipertensión intracraneal (Cushing).
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-blue-400">40 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">105/65 (78)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">97%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 3: Taquicardia Sinusal -->
+          <button onclick="setRhythm('tachycardia')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-amber-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-amber-400 text-sm group-hover:text-amber-300">Taquicardia Sinusal</span>
+                <span class="bg-amber-950/70 text-amber-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">AVISO</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Respuesta fisiológica al dolor, fiebre, hipovolemia, shock séptico o anemia. Acortamiento de diástole ventricular.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-amber-400">145 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">135/85 (101)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">96%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 4: Fibrilación Auricular (FA) con RVR -->
+          <button onclick="setRhythm('afib')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-purple-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-purple-400 text-sm group-hover:text-purple-300">Fibrilación Auricular (FA RVR)</span>
+                <span class="bg-purple-950/70 text-purple-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">IRREGULAR</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Ondas 'f' caóticas, intervalos R-R completamente irregulares. Pérdida de patada auricular con pulso arterial alternante.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-purple-400">~132 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">110/72 (84) var</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">94%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 5: Flutter Auricular 2:1 -->
+          <button onclick="setRhythm('aflutter')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-orange-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-orange-400 text-sm group-hover:text-orange-300">Flutter Auricular (Conducción 2:1)</span>
+                <span class="bg-orange-950/70 text-orange-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">MACRORREENTRADA</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Ondas 'F' en dientes de sierra auricular a 300/min. Filtro del nodo AV con respuesta ventricular regular fija a 150 lpm.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-orange-400">150 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">115/75 (88)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">95%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 6: Taquicardia Ventricular Monomorfa (TV) -->
+          <button onclick="setRhythm('vtach')" class="rhythm-card text-left bg-[#1e0e12] hover:bg-[#2c1319] border border-red-700/80 hover:border-red-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-red-400 text-sm group-hover:text-red-300">Taquicardia Ventricular (TV)</span>
+                <span class="bg-red-950 text-red-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold animate-pulse">ALERTA CRÍTICA</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                QRS ancho (&gt;160 ms), FC 180 lpm. Hipotensión arterial severa. Riesgo inminente de degeneración a FV o PCR sin pulso.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-red-400">180 lpm</strong></span>
+              <span>PA: <strong class="text-red-500">68/42 (50)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">86%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 7: Fibrilación Ventricular (FV) -->
+          <button onclick="setRhythm('vfib')" class="rhythm-card text-left bg-[#25080c] hover:bg-[#380e14] border-2 border-red-600 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-red-400 text-sm group-hover:text-red-300">Fibrilación Ventricular (FV)</span>
+                <span class="bg-red-900 text-white text-[10px] px-2 py-0.5 rounded font-mono font-bold animate-ping">PARADA PCR</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Actividad caótica sin gasto cardíaco. Curva PAI colapsada. ¡Emergencia vital! Desfibrilación precoz inmediata.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-red-400">---</strong></span>
+              <span>PA: <strong class="text-red-500">18/12 (14)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">0%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 8: Asistolia -->
+          <button onclick="setRhythm('asystole')" class="rhythm-card text-left bg-[#1a0a0d] hover:bg-[#271015] border border-red-800/80 hover:border-red-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-red-300 text-sm group-hover:text-red-200">Asistolia (Línea Isoeléctrica)</span>
+                <span class="bg-red-950 text-red-300 text-[10px] px-2 py-0.5 rounded font-mono font-bold">PCR NO DESFIBRILABLE</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Ausencia total de actividad eléctrica ventricular. RCP de alta calidad y Adrenalina 1 mg cada 3-5 minutos.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-red-400">0 lpm</strong></span>
+              <span>PA: <strong class="text-red-500">12/8 (9)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">0%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 9: Bloqueo AV Completo (3er Grado) -->
+          <button onclick="setRhythm('avblock')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-indigo-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-indigo-400 text-sm group-hover:text-indigo-300">Bloqueo AV Completo (3er Grado)</span>
+                <span class="bg-indigo-950/70 text-indigo-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">DISOCIACIÓN AV</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Ondas P independientes a 78 lpm; escape ventricular lento y ancho a 32 lpm. Bradicardia severa sintomática.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-indigo-400">32 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">88/52 (64)</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">91%</strong></span>
+            </div>
+          </button>
+
+          <!-- Tarjeta 10: Bigeminismo Ventricular -->
+          <button onclick="setRhythm('bigeminy')" class="rhythm-card text-left bg-[#0c121e] hover:bg-[#131d30] border border-slate-700/80 hover:border-pink-500 p-3.5 rounded-lg transition duration-200 group flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-pink-400 text-sm group-hover:text-pink-300">Bigeminismo Ventricular</span>
+                <span class="bg-pink-950/70 text-pink-400 text-[10px] px-2 py-0.5 rounded font-mono font-bold">ECTOPIA</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-2">
+                Un latido sinusal seguido de una extrasístole ventricular (CVP) prematura con pulso atenuado en línea arterial.
+              </p>
+            </div>
+            <div class="bg-black/50 p-2 rounded text-[11px] font-mono text-slate-300 flex justify-between border border-slate-800">
+              <span>FC: <strong class="text-pink-400">~62 lpm</strong></span>
+              <span>PA: <strong class="text-red-400">Alternante</strong></span>
+              <span>SpO2: <strong class="text-cyan-400">95%</strong></span>
+            </div>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- --------------------------------------------------------------------- -->
+    <!-- PESTAÑA 3: MODIFICAR PARÁMETROS HEMODINÁMICOS MANUALES                -->
+    <!-- --------------------------------------------------------------------- -->
+    <div id="tab-parametros" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div class="max-w-4xl mx-auto space-y-6 py-3">
+        
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
+          <div>
+            <h2 class="text-base md:text-lg font-bold text-white flex items-center gap-2">
+              <span class="text-emerald-400">🎛</span>
+              <span>Panel de Control Hemodinámico Personalizado</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Ajuste los valores a su criterio. El simulador recalculará en tiempo real la forma de onda, la PAM y el estado de alarmas.
+            </p>
+          </div>
+          <button onclick="resetToNormal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded font-medium border border-slate-600 transition">
+            Restablecer Valores Normales
+          </button>
+        </div>
+
+        <!-- Bloque de Sliders de Parámetros -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          <!-- Frecuencia Cardíaca -->
+          <div class="bg-[#091510] border border-emerald-900/60 p-4 rounded-lg space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                <span>Frecuencia Cardíaca (FC)</span>
+              </label>
+              <span class="font-mono font-bold text-lg text-emerald-300" id="val-display-hr">75 lpm</span>
+            </div>
+            <input type="range" id="slider-hr" min="20" max="220" step="1" value="75" class="w-full accent-emerald-500 cursor-pointer">
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>20 lpm (Bradicardia Extrema)</span>
+              <span>220 lpm (Taquicardia Extrema)</span>
+            </div>
+          </div>
+
+          <!-- Saturación de Oxígeno (SpO2) -->
+          <div class="bg-[#09151a] border border-cyan-900/60 p-4 rounded-lg space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-sm font-bold text-cyan-400">Saturación O2 (SpO2)</label>
+              <span class="font-mono font-bold text-lg text-cyan-300" id="val-display-spo2">99 %</span>
+            </div>
+            <input type="range" id="slider-spo2" min="50" max="100" step="1" value="99" class="w-full accent-cyan-500 cursor-pointer">
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>50 % (Hipoxemia Severa)</span>
+              <span>100 % (Normoxia)</span>
+            </div>
+          </div>
+
+          <!-- Presión Arterial Sistólica -->
+          <div class="bg-[#180d10] border border-red-900/60 p-4 rounded-lg space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-sm font-bold text-red-400">Presión Arterial Sistólica (PAS)</label>
+              <span class="font-mono font-bold text-lg text-red-300" id="val-display-pas">120 mmHg</span>
+            </div>
+            <input type="range" id="slider-pas" min="40" max="240" step="2" value="120" class="w-full accent-red-500 cursor-pointer">
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>40 mmHg (Shock Profundo)</span>
+              <span>240 mmHg (Crisis Hipertensiva)</span>
+            </div>
+          </div>
+
+          <!-- Presión Arterial Diastólica -->
+          <div class="bg-[#180d10] border border-red-900/60 p-4 rounded-lg space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-sm font-bold text-red-400">Presión Arterial Diastólica (PAD)</label>
+              <span class="font-mono font-bold text-lg text-red-300" id="val-display-pad">80 mmHg</span>
+            </div>
+            <input type="range" id="slider-pad" min="20" max="140" step="2" value="80" class="w-full accent-red-500 cursor-pointer">
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>20 mmHg</span>
+              <span>140 mmHg</span>
+            </div>
+          </div>
+
+          <!-- Frecuencia Respiratoria -->
+          <div class="bg-[#19160a] border border-yellow-900/60 p-4 rounded-lg space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-sm font-bold text-yellow-400">Frecuencia Respiratoria (FR)</label>
+              <span class="font-mono font-bold text-lg text-yellow-300" id="val-display-rr">14 rpm</span>
+            </div>
+            <input type="range" id="slider-rr" min="4" max="50" step="1" value="14" class="w-full accent-yellow-500 cursor-pointer">
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>4 rpm (Bradipnea / Depresión)</span>
+              <span>50 rpm (Taquipnea Severa)</span>
+            </div>
+          </div>
+
+          <!-- Presión Arterial Media Calculada Automáticamente -->
+          <div class="bg-slate-900/90 border border-slate-700 p-4 rounded-lg flex flex-col justify-between">
+            <div>
+              <span class="text-xs uppercase font-bold text-slate-400">Fórmula de Perfusión Tisular</span>
+              <div class="text-sm font-bold text-white mt-1">Presión Arterial Media (PAM)</div>
+              <p class="text-[11px] text-slate-400 font-mono mt-1">PAM = [PAS + (2 × PAD)] / 3</p>
+            </div>
+            <div class="flex items-baseline justify-between mt-3 bg-black/60 p-3 rounded border border-slate-800">
+              <span class="text-xs text-slate-400 font-mono">Resultado actual:</span>
+              <span id="calculated-pam-display" class="text-3xl font-monitor font-bold text-red-400">93.3 mmHg</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Límites de Alarma Configurables -->
+        <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-lg">
+          <h3 class="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
+            <span>🔔</span>
+            <span>Configuración de Umbrales de Alarma del Monitor</span>
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="bg-black/40 p-2.5 rounded border border-slate-800">
+              <label class="text-[11px] text-slate-400 block mb-1">FC Mínima (lpm)</label>
+              <input type="number" id="input-lim-fc-min" value="50" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono text-sm">
+            </div>
+            <div class="bg-black/40 p-2.5 rounded border border-slate-800">
+              <label class="text-[11px] text-slate-400 block mb-1">FC Máxima (lpm)</label>
+              <input type="number" id="input-lim-fc-max" value="120" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono text-sm">
+            </div>
+            <div class="bg-black/40 p-2.5 rounded border border-slate-800">
+              <label class="text-[11px] text-slate-400 block mb-1">PAM Mínima (mmHg)</label>
+              <input type="number" id="input-lim-pam-min" value="65" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono text-sm">
+            </div>
+            <div class="bg-black/40 p-2.5 rounded border border-slate-800">
+              <label class="text-[11px] text-slate-400 block mb-1">SpO2 Mínima (%)</label>
+              <input type="number" id="input-lim-spo2-min" value="90" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono text-sm">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- --------------------------------------------------------------------- -->
+    <!-- PESTAÑA 4: GUÍA CLÍNICA DE ENFERMERÍA EN UCI                          -->
+    <!-- --------------------------------------------------------------------- -->
+    <div id="tab-guia" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div class="max-w-5xl mx-auto space-y-6 py-3">
+        
+        <!-- Encabezado de la Guía -->
+        <div class="bg-gradient-to-r from-blue-950/60 to-slate-900 border border-blue-900/60 p-4 rounded-lg flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <span>🩺</span>
+              <span>Manual de Cuidados Críticos de Enfermería y Razonamiento Hemodinámico</span>
+            </h2>
+            <p class="text-xs text-slate-300 mt-1">
+              Guía formativa universitaria basada en recomendaciones internacionales de soporte vital avanzado (ACLS/ERC) y monitorización hemodinámica invasiva.
+            </p>
+          </div>
+        </div>
+
+        <!-- Acordeón / Tarjetas de Contenido Didáctico -->
+        <div class="space-y-4 text-xs md:text-sm">
+          
+          <!-- SECCIÓN 1: MONITORIZACIÓN DE LA PRESIÓN ARTERIAL INVASIVA (PAI) -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-4 space-y-3">
+            <h3 class="font-bold text-red-400 text-base flex items-center gap-2 border-b border-slate-800 pb-2">
+              <span>1. Curva de Presión Arterial Invasiva (PAI): Claves de Enfermería</span>
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-300 leading-relaxed">
+              <div>
+                <h4 class="font-semibold text-white mb-1">Fisiología del Trazado Arterial:</h4>
+                <ul class="list-disc pl-5 space-y-1 text-xs">
+                  <li><strong>Rama Anácrota (Ascenso Sistólico):</strong> Refleja la contractilidad del ventrículo izquierdo (dP/dt) y la eyección rápida.</li>
+                  <li><strong>Pico Sistólico:</strong> Presión Arterial Sistólica máxima.</li>
+                  <li><strong>Incisura Dícrota:</strong> Cierre hermético de la válvula aórtica que marca el fin de la sístole y el inicio de la perfusión coronaria en diástole.</li>
+                  <li><strong>Rama Catácrota (Caída Diastólica):</strong> Refleja la resistencia vascular periférica (RVP) y la elasticidad arterial.</li>
+                </ul>
+              </div>
+              <div class="bg-black/50 p-3 rounded border border-slate-800 text-xs">
+                <h4 class="font-semibold text-amber-300 mb-1">Buenas Prácticas de Enfermería en UCI:</h4>
+                <ul class="list-disc pl-4 space-y-1 text-slate-300">
+                  <li><strong>Eje Flebostático:</strong> Calibrar a cero a nivel de la 4ª intersección del espacio intercostal con la línea axilar media (altura de la aurícula derecha).</li>
+                  <li><strong>Prueba de Onda Cuadrada (Fast Flush Test):</strong> Evaluar si el sistema está subamortiguado (sobrestima sistólica) o sobreamortiguado (burbujas/coágulos que aplanan la onda e infraestiman sistólica).</li>
+                  <li><strong>Perfusión Continua:</strong> Bolsa de suero heparinizado o fisiológico presurizada a 300 mmHg para mantener lavado a 3 ml/h.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECCIÓN 2: ALGORITMOS DE FARMACOLOGÍA Y ARRITMIAS EN UCI -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-4 space-y-3">
+            <h3 class="font-bold text-emerald-400 text-base flex items-center gap-2 border-b border-slate-800 pb-2">
+              <span>2. Fármacos de Primera Línea en Emergencias y Arritmias UCI</span>
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border border-slate-800">
+                <thead class="bg-slate-950 text-slate-300 font-mono">
+                  <tr>
+                    <th class="p-2 border-b border-slate-800">Fármaco</th>
+                    <th class="p-2 border-b border-slate-800">Indicación Principal</th>
+                    <th class="p-2 border-b border-slate-800">Dosis Estándar</th>
+                    <th class="p-2 border-b border-slate-800">Cuidados de Enfermería Clave</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300">
+                  <tr class="hover:bg-slate-800/40">
+                    <td class="p-2 font-bold text-white">Adrenalina (Epinefrina)</td>
+                    <td class="p-2">PCR (FV/TV sin pulso, Asistolia, AESP) y Shock Anafiláctico</td>
+                    <td class="p-2 font-mono text-emerald-400">1 mg IV en bolo cada 3-5 min</td>
+                    <td class="p-2">Lavar con 20 ml de SF 0.9% tras el bolo. Elevar la extremidad para acelerar llegada central.</td>
+                  </tr>
+                  <tr class="hover:bg-slate-800/40">
+                    <td class="p-2 font-bold text-white">Amiodarona</td>
+                    <td class="p-2">FV/TV sin pulso refractaria a 3 descargas; TV monomorfa estable</td>
+                    <td class="p-2 font-mono text-emerald-400">300 mg bolo diluido; 2ª dosis: 150 mg</td>
+                    <td class="p-2">Solo compatible con Suero Glucosado al 5%. Cuidado con flebitis en vía periférica.</td>
+                  </tr>
+                  <tr class="hover:bg-slate-800/40">
+                    <td class="p-2 font-bold text-white">Atropina</td>
+                    <td class="p-2">Bradicardia sinusal sintomática / Bloqueo AV nodal</td>
+                    <td class="p-2 font-mono text-emerald-400">1 mg IV en bolo (máx 3 mg)</td>
+                    <td class="p-2">Dosis menores a 0.5 mg causan bradicardia paradójica. Ineficaz en trasplante cardíaco o bloqueo infranodal.</td>
+                  </tr>
+                  <tr class="hover:bg-slate-800/40">
+                    <td class="p-2 font-bold text-white">Adenosina</td>
+                    <td class="p-2">Taquicardia Paroxística Supraventricular (TPSV) por reentrada</td>
+                    <td class="p-2 font-mono text-emerald-400">6 mg IV ultrarrápido; luego 12 mg</td>
+                    <td class="p-2">Técnica de dos jeringas en llave de 3 vías con 20 ml SF inmediato. Monitorizar ECG continuo (asistolia transitoria).</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SECCIÓN 3: TERAPIA ELÉCTRICA: CARDIOVERSIÓN VS DESFIBRILACIÓN -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-4 space-y-3">
+            <h3 class="font-bold text-cyan-400 text-base flex items-center gap-2 border-b border-slate-800 pb-2">
+              <span>3. Terapia Eléctrica: Diferenciación Crítica para Enfermería</span>
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div class="bg-[#10192a] p-3 rounded border border-blue-900/70">
+                <h4 class="font-bold text-blue-300 text-sm mb-1 flex items-center gap-1.5">
+                  <span>⚡ Desfibrilación Asincrónica</span>
+                </h4>
+                <p class="text-slate-300 mb-2">
+                  Entrega de energía no sincronizada en cualquier momento del ciclo eléctrico.
+                </p>
+                <ul class="list-disc pl-4 space-y-1 text-slate-300">
+                  <li><strong>Indicaciones exclusivas:</strong> Fibrilación Ventricular (FV) y Taquicardia Ventricular sin pulso (TVSP).</li>
+                  <li><strong>Energía:</strong> 120-200 Joules bifásico (o 360 J monofásico).</li>
+                  <li><strong>Urgencia:</strong> Inmediata; cada minuto de retraso disminuye un 10% la supervivencia. Reanudar RCP inmediatamente durante 2 minutos tras la descarga.</li>
+                </ul>
+              </div>
+
+              <div class="bg-[#1b1424] p-3 rounded border border-purple-900/70">
+                <h4 class="font-bold text-purple-300 text-sm mb-1 flex items-center gap-1.5">
+                  <span>🎯 Cardioversión Eléctrica Sincronizada</span>
+                </h4>
+                <p class="text-slate-300 mb-2">
+                  La descarga se sincroniza con el pico de la onda R para evitar la ventana vulnerable de la onda T (fenómeno R sobre T que induciría FV).
+                </p>
+                <ul class="list-disc pl-4 space-y-1 text-slate-300">
+                  <li><strong>Indicaciones:</strong> TV monomorfa con pulso inestable, Flutter auricular rápido, Fibrilación Auricular inestable.</li>
+                  <li><strong>Activación:</strong> Presionar botón "SYNC" en el desfibrilador y verificar marcas de sincronismo sobre las ondas R.</li>
+                  <li><strong>Cuidados:</strong> Sedoanalgesia previa si el paciente está consciente (Midazolam/Fentanilo o Propofol) y preparación de vía aérea.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- SISTEMA DE SCRIPT Y MOTOR DE SIMULACIÓN                                   -->
+  <!-- ========================================================================= -->
+  <script>
+    /**
+     * MOTOR DE SIMULACIÓN HEMODINÁMICA Y MONITOR MULTIPARAMÉTRICO
+     * Implementación en tiempo real para Enfermería Universitaria en Cuidados Críticos.
+     */
+
+    // --- ESTADO GLOBAL DEL MONITOR ---
+    const State = {
+      // Ritmo actual
+      currentRhythmId: 'sinus',
+      // Parámetros fisiológicos
+      hr: 75,
+      pas: 120,
+      pad: 80,
+      pam: 93.3,
+      spo2: 99,
+      rr: 14,
+      pi: 3.8, // Índice de perfusión
+      // Umbrales de alarma
+      limits: {
+        hrMin: 50,
+        hrMax: 120,
+        pamMin: 65,
+        spo2Min: 90
+      },
+      // Estado del sistema
+      isFrozen: false,
+      audioEnabled: false,
+      audioSilencedUntil: 0, // Timestamp milisegundos
+      alarmLevel: 'normal', // 'normal' | 'yellow' | 'red'
+      alarmMessage: 'RITMO SINUSAL NORMAL - PARÁMETROS EN RANGO',
+      
+      // Control del tiempo interno de las ondas
+      t: 0,
+      cardiacPhase: 0,
+      respPhase: 0,
+      lastSystoleTime: 0,
+      nextBeatInterval: 60 / 75,
+
+      // Variables específicas de variabilidad en FA o ectopias
+      afibBeatInterval: 0.8,
+      isBigeminyPVC: false
+    };
+
+    // --- CATÁLOGO DE ARRITMIAS PREDEFINIDAS ---
+    const RhythmsConfig = {
+      sinus: {
+        name: 'Ritmo Sinusal Normal',
+        tag: 'SINUSAL',
+        hr: 75, pas: 120, pad: 80, spo2: 99, rr: 14,
+        isArrest: false, isLethal: false,
+        msg: 'RITMO SINUSAL NORMAL - PERFUSIÓN ÓPTIMA'
+      },
+      bradycardia: {
+        name: 'Bradicardia Sinusal',
+        tag: 'BRADICARDIA',
+        hr: 40, pas: 105, pad: 65, spo2: 97, rr: 12,
+        isArrest: false, isLethal: false,
+        msg: 'AVISO: BRADICARDIA SINUSAL (FC < 50 lpm)'
+      },
+      tachycardia: {
+        name: 'Taquicardia Sinusal',
+        tag: 'TAQUICARDIA',
+        hr: 145, pas: 135, pad: 85, spo2: 96, rr: 24,
+        isArrest: false, isLethal: false,
+        msg: 'AVISO: TAQUICARDIA SINUSAL (FC > 120 lpm)'
+      },
+      afib: {
+        name: 'Fibrilación Auricular (RVR)',
+        tag: 'FIB. AURICULAR',
+        hr: 132, pas: 110, pad: 72, spo2: 94, rr: 20,
+        isArrest: false, isLethal: false,
+        msg: 'ALERTA: FIBRILACIÓN AURICULAR CON RESPUESTA RÁPIDA'
+      },
+      aflutter: {
+        name: 'Flutter Auricular 2:1',
+        tag: 'FLUTTER AV 2:1',
+        hr: 150, pas: 115, pad: 75, spo2: 95, rr: 18,
+        isArrest: false, isLethal: false,
+        msg: 'ALERTA: FLUTTER AURICULAR CONDUCCIÓN 2:1'
+      },
+      vtach: {
+        name: 'Taquicardia Ventricular Monomorfa',
+        tag: 'TV MONOMORFA',
+        hr: 180, pas: 68, pad: 42, spo2: 86, rr: 28,
+        isArrest: false, isLethal: true,
+        msg: '¡CRÍTICA!: TAQUICARDIA VENTRICULAR - HIPOTENSIÓN SEVERA'
+      },
+      vfib: {
+        name: 'Fibrilación Ventricular',
+        tag: 'FIB. VENTRICULAR',
+        hr: 0, pas: 18, pad: 12, spo2: 0, rr: 6,
+        isArrest: true, isLethal: true,
+        msg: '¡PARADA CARDIORRESPIRATORIA!: FV - DESFIBRILAR INMEDIATO'
+      },
+      asystole: {
+        name: 'Asistolia',
+        tag: 'ASISTOLIA',
+        hr: 0, pas: 12, pad: 8, spo2: 0, rr: 0,
+        isArrest: true, isLethal: true,
+        msg: '¡PARADA CARDIORRESPIRATORIA!: ASISTOLIA - INICIAR RCP Y ADRENALINA'
+      },
+      avblock: {
+        name: 'Bloqueo AV Completo (3er Grado)',
+        tag: 'BLOQUEO AV 3º',
+        hr: 32, pas: 88, pad: 52, spo2: 91, rr: 16,
+        isArrest: false, isLethal: true,
+        msg: '¡CRÍTICA!: BLOQUEO AV COMPLETO - PREPARAR MARCAPASOS'
+      },
+      bigeminy: {
+        name: 'Bigeminismo Ventricular',
+        tag: 'BIGEMINISMO',
+        hr: 62, pas: 120, pad: 76, spo2: 95, rr: 15,
+        isArrest: false, isLethal: false,
+        msg: 'AVISO: BIGEMINISMO VENTRICULAR FRECUENTE'
+      }
+    };
+
+    // --- RECURSOS WEB AUDIO API ---
+    let audioCtx = null;
+    let alarmOscillatorTimeout = null;
+
+    function initAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // Beep sistólico sincronizado modulado por SpO2 (Pitch real de pulsioxímetro)
+    function playSystolicBeep(spo2Val) {
+      if (!State.audioEnabled || !audioCtx) return;
+      if (Date.now() < State.audioSilencedUntil) return;
+
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        // En monitores reales (Nellcor/Philips), el tono cae a medida que la SpO2 disminuye
+        const clampSpo2 = Math.max(60, Math.min(100, spo2Val));
+        // Frecuencia entre 350 Hz (60% SpO2) y 880 Hz (100% SpO2)
+        const freq = 350 + ((clampSpo2 - 60) / 40) * 530;
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+        // Envolvente rápida y agradable
+        gain.gain.setValueAtTime(0, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.09);
+      } catch (err) {
+        console.error('Audio beep error', err);
+      }
+    }
+
+    // Alarma Médica Estándar IEC 60601-1-8 (Ráfaga de tonos)
+    let lastAlarmSoundTime = 0;
+    function triggerMedicalAlarmSound(level) {
+      if (!State.audioEnabled || !audioCtx) return;
+      if (Date.now() < State.audioSilencedUntil) return;
+
+      const now = Date.now();
+      const interval = level === 'red' ? 3000 : 7000;
+      if (now - lastAlarmSoundTime < interval) return;
+      lastAlarmSoundTime = now;
+
+      try {
+        if (level === 'red') {
+          // Secuencia urgente de alta prioridad: C5, E5, G5, C6, E6
+          const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+          notes.forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const startTime = audioCtx.currentTime + i * 0.14;
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, startTime);
+
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.12, startTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start(startTime);
+            osc.stop(startTime + 0.13);
+          });
+        } else if (level === 'yellow') {
+          // Alarma de prioridad media: 3 tonos descendentes
+          const notes = [659.25, 587.33, 523.25];
+          notes.forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const startTime = audioCtx.currentTime + i * 0.2;
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, startTime);
+
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.07, startTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.18);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start(startTime);
+            osc.stop(startTime + 0.19);
+          });
+        }
+      } catch (err) {
+        console.error('Alarm tone error', err);
+      }
+    }
+
+    // --- CANVAS OSCILOSCOPIO Y MOTOR DE TRAZADOS ---
+    const canvas = document.getElementById('waveform-canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    // Dimensiones lógicas y sweep bar
+    let width = 0;
+    let height = 0;
+    let sweepX = 0;
+    const sweepSpeed = 2.4; // Píxeles por frame (~25 mm/s visual)
+    const sweepClearGap = 35; // Espacio que borra la cabeza de barrido
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      width = Math.floor(rect.width * dpr);
+      height = Math.floor(rect.height * dpr);
+
+      canvas.width = width;
+      canvas.height = height;
+
+      // Limpiar fondo
+      ctx.fillStyle = '#060a10';
+      ctx.fillRect(0, 0, width, height);
+      sweepX = 0;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- MODELO MATEMÁTICO DE ONDAS FISIOLÓGICAS ---
+    
+    // 1. ECG (Derivación II)
+    function getECGSample(phase, rhythmId) {
+      // Retorna valor entre -1.0 y +1.5
+      switch (rhythmId) {
+        case 'asystole':
+          // Línea isoeléctrica con ligerísima oscilación de ruido eléctrico
+          return (Math.sin(State.t * 3) * 0.02) + (Math.sin(State.t * 19) * 0.01);
+
+        case 'vfib':
+          // Caos fibrilatorio continuo
+          return (
+            Math.sin(State.t * 22) * 0.45 +
+            Math.sin(State.t * 31 + 1.2) * 0.35 +
+            Math.cos(State.t * 14 - 0.5) * 0.25 +
+            (Math.random() - 0.5) * 0.15
+          );
+
+        case 'vtach':
+          // Complejos ventriculares anchos monomorfos (>160 ms), onda suave y bizarra
+          const vtCycle = (State.t * (State.hr / 60)) % 1;
+          if (vtCycle < 0.5) {
+            return Math.sin(vtCycle * Math.PI * 2) * 1.35;
+          } else {
+            return -Math.sin((vtCycle - 0.5) * Math.PI * 2) * 0.4;
+          }
+
+        case 'aflutter':
+          // Dientes de sierra auriculares a 300/min (5 Hz) + QRS cada 2 ondas
+          const saw = ((State.t * 5) % 1) * 0.4 - 0.2;
+          let qrsAflutter = 0;
+          if (phase > 0.35 && phase < 0.45) {
+            const p = (phase - 0.35) / 0.10;
+            if (p < 0.2) qrsAflutter = -p * 1.5;
+            else if (p < 0.5) qrsAflutter = (p - 0.2) * 4.5 - 0.3;
+            else qrsAflutter = 1.05 - (p - 0.5) * 2.5;
+          }
+          return saw + qrsAflutter;
+
+        case 'afib':
+          // Línea de base caótica (ondas f) + QRS estrecho irregular
+          const fWaves = (Math.sin(State.t * 40) * 0.05) + (Math.sin(State.t * 62) * 0.04);
+          let qrsAfib = 0;
+          if (phase > 0.35 && phase < 0.47) {
+            const p = (phase - 0.35) / 0.12;
+            if (p < 0.2) qrsAfib = -0.15 * (p / 0.2);
+            else if (p < 0.5) qrsAfib = -0.15 + (1.35 * ((p - 0.2) / 0.3));
+            else if (p < 0.75) qrsAfib = 1.2 - (1.45 * ((p - 0.5) / 0.25));
+            else qrsAfib = -0.25 + (0.25 * ((p - 0.75) / 0.25));
+          }
+          return fWaves + qrsAfib;
+
+        case 'avblock':
+          // Disociación AV completa: Ondas P a 75 lpm independientes + escape a 32 lpm
+          const pPhase = (State.t * (75 / 60)) % 1;
+          let pWave = 0;
+          if (pPhase > 0.1 && pPhase < 0.22) {
+            pWave = Math.sin((pPhase - 0.1) / 0.12 * Math.PI) * 0.22;
+          }
+          // Complejo QRS de escape ventricular lento y ancho
+          let qrsEscape = 0;
+          if (phase > 0.35 && phase < 0.55) {
+            const ep = (phase - 0.35) / 0.20;
+            qrsEscape = Math.sin(ep * Math.PI * 2) * 1.1;
+          }
+          return pWave + qrsEscape;
+
+        case 'bigeminy':
+          // Alternancia entre latido sinusal normal y latido ventricular CVP
+          if (State.isBigeminyPVC) {
+            // Latido ventricular ectópico ancho prematuro
+            if (phase > 0.25 && phase < 0.55) {
+              const bp = (phase - 0.25) / 0.30;
+              return -Math.sin(bp * Math.PI * 2) * 1.25;
+            }
+            return 0;
+          }
+          // Si no es PVC, trazo sinusal normal (sigue abajo)
+
+        case 'sinus':
+        case 'bradycardia':
+        case 'tachycardia':
+        default:
+          // Ciclo sinusal fisiológico clásico: P, PR, QRS, T
+          let ecg = 0;
+          // Onda P
+          if (phase >= 0.12 && phase < 0.24) {
+            ecg += Math.sin((phase - 0.12) / 0.12 * Math.PI) * 0.18;
+          }
+          // Segmento PR isoeléctrico
+          // Complejo QRS
+          if (phase >= 0.34 && phase < 0.44) {
+            const qp = (phase - 0.34) / 0.10;
+            if (qp < 0.18) {
+              ecg -= (qp / 0.18) * 0.18; // Onda Q
+            } else if (qp < 0.50) {
+              ecg = -0.18 + ((qp - 0.18) / 0.32) * 1.45; // Onda R
+            } else if (qp < 0.80) {
+              ecg = 1.27 - ((qp - 0.50) / 0.30) * 1.62; // Onda S
+            } else {
+              ecg = -0.35 + ((qp - 0.80) / 0.20) * 0.35; // Retorno a línea de base
+            }
+          }
+          // Onda T (asimétrica)
+          if (phase >= 0.54 && phase < 0.74) {
+            const tp = (phase - 0.54) / 0.20;
+            ecg += Math.sin(tp * Math.PI) * 0.32;
+          }
+          return ecg;
+      }
+    }
+
+    // 2. Presión Arterial Invasiva (PAI / Art Line)
+    function getPAISample(phase, rhythmId) {
+      // Parada / Asistolia / FV: Presión de llenado circulatorio estático baja y plana
+      if (rhythmId === 'asystole' || rhythmId === 'vfib') {
+        return State.pad + (Math.sin(State.t * 0.5) * 1.5);
+      }
+
+      // En arritmias ventriculares como TV, el gasto cardíaco se derrumba y la curva es pequeña
+      let currentPas = State.pas;
+      let currentPad = State.pad;
+
+      if (rhythmId === 'vtach') {
+        currentPas = 68;
+        currentPad = 42;
+      }
+
+      // Retardo fisiológico de tránsito de pulso respecto al QRS (~15% del ciclo)
+      let artPhase = (phase - 0.16 + 1) % 1;
+
+      // Forma anácrota y dícrota
+      if (artPhase < 0.20) {
+        // Ascenso sistólico rápido (anácroto)
+        const up = artPhase / 0.20;
+        return currentPad + (currentPas - currentPad) * Math.sin(up * Math.PI * 0.5);
+      } else if (artPhase < 0.40) {
+        // Descenso hacia la incisura dícrota
+        const down1 = (artPhase - 0.20) / 0.20;
+        const dicroticDip = currentPad + (currentPas - currentPad) * 0.65;
+        return currentPas - (currentPas - dicroticDip) * Math.sin(down1 * Math.PI * 0.5);
+      } else if (artPhase < 0.52) {
+        // Onda dícrota secundaria (rebote por cierre aórtico)
+        const bounce = (artPhase - 0.40) / 0.12;
+        const dip = currentPad + (currentPas - currentPad) * 0.65;
+        const peakDicrotic = currentPad + (currentPas - currentPad) * 0.74;
+        return dip + (peakDicrotic - dip) * Math.sin(bounce * Math.PI);
+      } else {
+        // Caída diastólica exponencial (escurrimiento periférico)
+        const decay = (artPhase - 0.52) / 0.48;
+        const fromVal = currentPad + (currentPas - currentPad) * 0.65;
+        return currentPad + (fromVal - currentPad) * Math.exp(-decay * 3.0);
+      }
+    }
+
+    // 3. Pletismografía de Pulsioximetría (SpO2)
+    function getPlethSample(phase, rhythmId) {
+      if (rhythmId === 'asystole' || rhythmId === 'vfib' || State.spo2 === 0) {
+        return 0;
+      }
+      // Pulso sincronizado similar a PAI pero con amortiguación capilar periférica
+      let plethPhase = (phase - 0.22 + 1) % 1;
+      let wave = 0;
+      if (plethPhase < 0.26) {
+        wave = Math.sin((plethPhase / 0.26) * Math.PI * 0.5);
+      } else if (plethPhase < 0.50) {
+        const d1 = (plethPhase - 0.26) / 0.24;
+        wave = 1.0 - d1 * 0.35 + Math.sin(d1 * Math.PI) * 0.12;
+      } else {
+        const d2 = (plethPhase - 0.50) / 0.50;
+        wave = 0.65 * Math.exp(-d2 * 3.5);
+      }
+      return wave; // 0 a 1.0
+    }
+
+    // 4. Respiración por Impedancia Torácica (RESP)
+    function getRespSample() {
+      if (State.rr === 0) return 0;
+      // Curva respiratoria suave con inspiración más rápida y espiración más prolongada
+      const cycle = State.respPhase % 1;
+      if (cycle < 0.38) {
+        // Inspiración
+        return Math.sin((cycle / 0.38) * Math.PI * 0.5);
+      } else {
+        // Espiración
+        return Math.cos(((cycle - 0.38) / 0.62) * Math.PI * 0.5);
+      }
+    }
+
+    // --- BARRIDO Y RENDERIZADO DEL MONITOR A 60 FPS ---
+    let lastTimestamp = 0;
+    let prevPoints = {
+      ecg: null,
+      art: null,
+      pleth: null,
+      resp: null
+    };
+
+    function renderLoop(timestamp) {
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
+      lastTimestamp = timestamp;
+
+      if (!State.isFrozen) {
+        // Actualizar tiempos
+        State.t += dt;
+
+        // Ritmo cardíaco y avance de fase
+        const beatPeriod = State.currentRhythmId === 'afib' 
+          ? State.afibBeatInterval 
+          : (State.hr > 0 ? (60 / State.hr) : 999);
+
+        if (State.hr > 0 && State.currentRhythmId !== 'asystole' && State.currentRhythmId !== 'vfib') {
+          State.cardiacPhase += dt / beatPeriod;
+
+          // Detección de nuevo latido (QRS y sístole)
+          if (State.cardiacPhase >= 1.0) {
+            State.cardiacPhase = State.cardiacPhase % 1.0;
+
+            // En Bigeminismo, alternar entre sinusal y PVC
+            if (State.currentRhythmId === 'bigeminy') {
+              State.isBigeminyPVC = !State.isBigeminyPVC;
+            }
+
+            // En FA, aleatorizar el siguiente intervalo R-R
+            if (State.currentRhythmId === 'afib') {
+              const basePeriod = 60 / State.hr;
+              State.afibBeatInterval = basePeriod * (0.65 + Math.random() * 0.7);
+            }
+
+            // Gatillar Beep de audio y destello de corazón
+            triggerSystoleBeat();
+          }
+        } else {
+          State.cardiacPhase = 0;
+        }
+
+        // Avance respiratorio
+        if (State.rr > 0) {
+          const respPeriod = 60 / State.rr;
+          State.respPhase = (State.respPhase + dt / respPeriod) % 1.0;
+        }
+
+        // Evaluar Alarmas Médicas
+        evaluateAlarms();
+
+        // Dibujar franja de barrido en el Canvas
+        drawSweepFrame();
+      }
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    // Disparo sincronizado del latido
+    function triggerSystoleBeat() {
+      // Icono de corazón palpitante
+      const heartEl = document.getElementById('heart-icon');
+      if (heartEl) {
+        heartEl.classList.remove('beating');
+        // forzar reflow
+        void heartEl.offsetWidth;
+        heartEl.classList.add('beating');
+      }
+
+      // Reproducir sonido de sístole
+      playSystolicBeep(State.spo2);
+    }
+
+    // Dibujado continuo del osciloscopio
+    function drawSweepFrame() {
+      if (width === 0 || height === 0) return;
+
+      const nextX = sweepX + sweepSpeed;
+
+      // Borrar segmento delantero (cabeza de barrido del monitor)
+      const clearWidth = sweepClearGap;
+      ctx.fillStyle = '#060a10';
+      ctx.fillRect(sweepX, 0, clearWidth, height);
+
+      // Dibujar guías sutiles de canal
+      const rowHeight = height / 4;
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(sweepX, i * rowHeight);
+        ctx.lineTo(sweepX + clearWidth, i * rowHeight);
+        ctx.stroke();
+      }
+
+      // Calibraciones verticales de los 4 canales
+      // Canal 1: ECG (Verde)
+      const ch1YCenter = rowHeight * 0.52;
+      const ecgVal = getECGSample(State.cardiacPhase, State.currentRhythmId);
+      const ecgY = ch1YCenter - (ecgVal * (rowHeight * 0.40));
+
+      // Canal 2: PAI (Rojo)
+      const ch2Top = rowHeight;
+      const paiVal = getPAISample(State.cardiacPhase, State.currentRhythmId);
+      // Rango escala PAI: 0 a 200 mmHg
+      const paiNormalized = Math.max(0, Math.min(220, paiVal)) / 200;
+      const paiY = (ch2Top + rowHeight * 0.90) - (paiNormalized * (rowHeight * 0.78));
+
+      // Canal 3: SpO2 Pleth (Cian)
+      const ch3Top = rowHeight * 2;
+      const plethVal = getPlethSample(State.cardiacPhase, State.currentRhythmId);
+      const plethY = (ch3Top + rowHeight * 0.88) - (plethVal * (rowHeight * 0.72));
+
+      // Canal 4: Respiración (Amarillo)
+      const ch4Top = rowHeight * 3;
+      const respVal = getRespSample();
+      const respY = (ch4Top + rowHeight * 0.85) - (respVal * (rowHeight * 0.65));
+
+      // Trazar segmentos de líneas
+      if (prevPoints.ecg !== null && sweepX > 0) {
+        // Trazo 1: ECG
+        ctx.beginPath();
+        ctx.strokeStyle = '#10b981'; // Verde Esmeralda
+        ctx.lineWidth = 2.2;
+        ctx.shadowColor = 'rgba(16, 185, 129, 0.8)';
+        ctx.shadowBlur = 4;
+        ctx.moveTo(prevPoints.ecg.x, prevPoints.ecg.y);
+        ctx.lineTo(sweepX, ecgY);
+        ctx.stroke();
+
+        // Trazo 2: PAI
+        ctx.beginPath();
+        ctx.strokeStyle = '#ef4444'; // Rojo Carmín
+        ctx.lineWidth = 2.2;
+        ctx.shadowColor = 'rgba(239, 68, 68, 0.8)';
+        ctx.shadowBlur = 4;
+        ctx.moveTo(prevPoints.art.x, prevPoints.art.y);
+        ctx.lineTo(sweepX, paiY);
+        ctx.stroke();
+
+        // Trazo 3: SpO2
+        ctx.beginPath();
+        ctx.strokeStyle = '#06b6d4'; // Cian Neón
+        ctx.lineWidth = 2.0;
+        ctx.shadowColor = 'rgba(6, 182, 212, 0.8)';
+        ctx.shadowBlur = 4;
+        ctx.moveTo(prevPoints.pleth.x, prevPoints.pleth.y);
+        ctx.lineTo(sweepX, plethY);
+        ctx.stroke();
+
+        // Trazo 4: RESP
+        ctx.beginPath();
+        ctx.strokeStyle = '#eab308'; // Amarillo Oro
+        ctx.lineWidth = 1.9;
+        ctx.shadowColor = 'rgba(234, 179, 8, 0.8)';
+        ctx.shadowBlur = 3;
+        ctx.moveTo(prevPoints.resp.x, prevPoints.resp.y);
+        ctx.lineTo(sweepX, respY);
+        ctx.stroke();
+
+        // Reset sombras para performance
+        ctx.shadowBlur = 0;
+      }
+
+      // Guardar puntos previos
+      prevPoints.ecg = { x: sweepX, y: ecgY };
+      prevPoints.art = { x: sweepX, y: paiY };
+      prevPoints.pleth = { x: sweepX, y: plethY };
+      prevPoints.resp = { x: sweepX, y: respY };
+
+      // Barra vertical indicadora del frente del barrido (Cursor LCD)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.fillRect(sweepX + 1, 0, 1.5, height);
+
+      // Reiniciar sweep cuando llega al extremo derecho
+      sweepX = nextX;
+      if (sweepX >= width) {
+        sweepX = 0;
+        prevPoints.ecg = null;
+        prevPoints.art = null;
+        prevPoints.pleth = null;
+        prevPoints.resp = null;
+      }
+    }
+
+    // --- SISTEMA DE ALARMAS Y EVALUACIÓN CLÍNICA ---
+    function evaluateAlarms() {
+      let level = 'normal';
+      let msg = 'PARÁMETROS EN RANGO NORMAL';
+
+      const cfg = RhythmsConfig[State.currentRhythmId];
+
+      // Prioridad 1: Arritmias letales y Paro
+      if (cfg && cfg.isLethal) {
+        level = 'red';
+        msg = cfg.msg;
+      } else if (State.hr < State.limits.hrMin) {
+        level = 'yellow';
+        msg = `AVISO: BRADICARDIA (FC ${Math.round(State.hr)} < ${State.limits.hrMin} lpm)`;
+      } else if (State.hr > State.limits.hrMax) {
+        level = 'yellow';
+        msg = `AVISO: TAQUICARDIA (FC ${Math.round(State.hr)} > ${State.limits.hrMax} lpm)`;
+      } else if (State.pam < State.limits.pamMin) {
+        level = 'red';
+        msg = `¡ALERTA!: HIPOPERFUSIÓN TISULAR (PAM ${Math.round(State.pam)} < ${State.limits.pamMin} mmHg)`;
+      } else if (State.spo2 < State.limits.spo2Min) {
+        level = 'red';
+        msg = `¡ALERTA!: HIPOXEMIA ARTERIAL (SpO2 ${State.spo2}% < ${State.limits.spo2Min}%)`;
+      } else if (State.rr < 8 || State.rr > 32) {
+        level = 'yellow';
+        msg = `AVISO: PATRÓN RESPIRATORIO ALTERADO (FR ${State.rr} rpm)`;
+      } else if (cfg && cfg.msg) {
+        msg = cfg.msg;
+      }
+
+      State.alarmLevel = level;
+      State.alarmMessage = msg;
+
+      updateAlarmBannerUI(level, msg);
+
+      // Sonido de alarma si corresponde
+      if (level !== 'normal') {
+        triggerMedicalAlarmSound(level);
+      }
+    }
+
+    function updateAlarmBannerUI(level, msg) {
+      const banner = document.getElementById('alarm-banner');
+      const bannerText = document.getElementById('alarm-banner-text');
+      const tag = document.getElementById('alarm-priority-tag');
+      const icon = document.getElementById('alarm-status-icon');
+      const monitorBox = document.getElementById('monitor-wrapper');
+
+      bannerText.innerText = msg;
+
+      // Limpiar clases
+      banner.classList.remove('bg-red-950/90', 'border-red-600', 'text-red-200', 'bg-amber-950/80', 'border-yellow-600', 'text-yellow-200', 'alarm-active-red', 'alarm-active-yellow');
+      monitorBox.classList.remove('border-red-600', 'border-yellow-600', 'alarm-active-red', 'alarm-active-yellow');
+
+      if (level === 'red') {
+        banner.classList.add('bg-red-950/90', 'border-red-600', 'text-red-200', 'alarm-active-red');
+        monitorBox.classList.add('border-red-600', 'alarm-active-red');
+        tag.innerText = 'ALTA PRIORIDAD';
+        tag.className = 'text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-red-600 text-white animate-pulse';
+        icon.innerText = '▲';
+        icon.className = 'text-red-400 font-bold';
+      } else if (level === 'yellow') {
+        banner.classList.add('bg-amber-950/80', 'border-yellow-600', 'text-yellow-200', 'alarm-active-yellow');
+        monitorBox.classList.add('border-yellow-600', 'alarm-active-yellow');
+        tag.innerText = 'MEDIA PRIORIDAD';
+        tag.className = 'text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-yellow-500 text-black font-semibold';
+        icon.innerText = '■';
+        icon.className = 'text-yellow-400 font-bold';
+      } else {
+        banner.className = 'flex-1 max-w-xl mx-2 py-1 px-3 rounded flex items-center justify-between bg-slate-900/80 border border-slate-700 text-slate-300 transition-all duration-300';
+        monitorBox.classList.add('border-slate-800');
+        tag.innerText = 'NORMAL';
+        tag.className = 'text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300';
+        icon.innerText = '●';
+        icon.className = 'text-emerald-400 text-base';
+      }
+    }
+
+    // --- ACTUALIZACIÓN DE INTERFAZ NUMÉRICA ---
+    function updateNumericDisplays() {
+      // FC
+      const hrDisplay = document.getElementById('num-hr');
+      hrDisplay.innerText = State.hr === 0 ? '---' : Math.round(State.hr);
+
+      // PAI y PAM
+      const sysDiaDisplay = document.getElementById('num-sys-dia');
+      const pamDisplay = document.getElementById('num-pam');
+      const ppDisplay = document.getElementById('num-pp');
+      
+      // Recalcular PAM: [PAS + 2*PAD] / 3
+      State.pam = (State.pas + 2 * State.pad) / 3;
+      const pp = Math.max(0, State.pas - State.pad);
+
+      if (State.currentRhythmId === 'asystole' || State.currentRhythmId === 'vfib') {
+        sysDiaDisplay.innerText = `${Math.round(State.pas)}/${Math.round(State.pad)}`;
+        pamDisplay.innerText = `(${Math.round(State.pam)})`;
+      } else {
+        sysDiaDisplay.innerText = `${Math.round(State.pas)}/${Math.round(State.pad)}`;
+        pamDisplay.innerText = `(${Math.round(State.pam)})`;
+      }
+      ppDisplay.innerText = Math.round(pp);
+
+      // SpO2 y Perfusion Index
+      const spo2Display = document.getElementById('num-spo2');
+      const piDisplay = document.getElementById('num-pi');
+      spo2Display.innerText = State.spo2 === 0 ? '--' : State.spo2;
+      piDisplay.innerText = (State.spo2 > 0 ? (State.pi + (Math.sin(State.t * 0.1) * 0.2)).toFixed(1) : '0.0');
+
+      // FR
+      const rrDisplay = document.getElementById('num-rr');
+      rrDisplay.innerText = State.rr === 0 ? '--' : State.rr;
+
+      // Etiquetas
+      const ecgTag = document.getElementById('ecg-rhythm-tag');
+      const cfg = RhythmsConfig[State.currentRhythmId];
+      if (cfg && ecgTag) {
+        ecgTag.innerText = cfg.tag;
+      }
+
+      // Display en pestaña de parámetros
+      const calcPamEl = document.getElementById('calculated-pam-display');
+      if (calcPamEl) {
+        calcPamEl.innerText = `${State.pam.toFixed(1)} mmHg`;
+      }
+    }
+
+    // Temporizador de reloj de cabecera en tiempo real
+    function updateClock() {
+      const now = new Date();
+      const hrs = String(now.getHours()).padStart(2, '0');
+      const mins = String(now.getMinutes()).padStart(2, '0');
+      const secs = String(now.getSeconds()).padStart(2, '0');
+      const clockEl = document.getElementById('system-clock');
+      if (clockEl) {
+        clockEl.innerText = `${hrs}:${mins}:${secs}`;
+      }
+
+      // Cuenta atrás de silencio de alarmas
+      const silenceText = document.getElementById('silence-text');
+      if (Date.now() < State.audioSilencedUntil) {
+        const remaining = Math.ceil((State.audioSilencedUntil - Date.now()) / 1000);
+        silenceText.innerText = `Silenciado (${remaining}s)`;
+      } else {
+        silenceText.innerText = `Silenciar (120s)`;
+      }
+    }
+    setInterval(updateClock, 1000);
+    setInterval(updateNumericDisplays, 350);
+
+    // --- ACCIÓN: SELECCIÓN DE ARRITMIA DESDE EL CATÁLOGO ---
+    function setRhythm(rhythmKey) {
+      const config = RhythmsConfig[rhythmKey];
+      if (!config) return;
+
+      State.currentRhythmId = rhythmKey;
+      State.hr = config.hr;
+      State.pas = config.pas;
+      State.pad = config.pad;
+      State.spo2 = config.spo2;
+      State.rr = config.rr;
+
+      // Sincronizar sliders en pestaña de configuración
+      syncSlidersFromState();
+
+      // Cambiar a la vista del monitor inmediatamente para visualizar el trazado
+      switchTab('tab-monitor');
+      updateNumericDisplays();
+      evaluateAlarms();
+    }
+
+    function syncSlidersFromState() {
+      const sHr = document.getElementById('slider-hr');
+      const sPas = document.getElementById('slider-pas');
+      const sPad = document.getElementById('slider-pad');
+      const sSpo2 = document.getElementById('slider-spo2');
+      const sRr = document.getElementById('slider-rr');
+
+      if (sHr) { sHr.value = State.hr; document.getElementById('val-display-hr').innerText = `${State.hr} lpm`; }
+      if (sPas) { sPas.value = State.pas; document.getElementById('val-display-pas').innerText = `${State.pas} mmHg`; }
+      if (sPad) { sPad.value = State.pad; document.getElementById('val-display-pad').innerText = `${State.pad} mmHg`; }
+      if (sSpo2) { sSpo2.value = State.spo2; document.getElementById('val-display-spo2').innerText = `${State.spo2} %`; }
+      if (sRr) { sRr.value = State.rr; document.getElementById('val-display-rr').innerText = `${State.rr} rpm`; }
+    }
+
+    function resetToNormal() {
+      setRhythm('sinus');
+    }
+
+    // --- INTERACCIÓN CON SLIDERS MANUALES ---
+    function setupSliderListeners() {
+      const sHr = document.getElementById('slider-hr');
+      const sPas = document.getElementById('slider-pas');
+      const sPad = document.getElementById('slider-pad');
+      const sSpo2 = document.getElementById('slider-spo2');
+      const sRr = document.getElementById('slider-rr');
+
+      sHr.addEventListener('input', (e) => {
+        State.hr = parseInt(e.target.value, 10);
+        document.getElementById('val-display-hr').innerText = `${State.hr} lpm`;
+        updateNumericDisplays();
+      });
+
+      sPas.addEventListener('input', (e) => {
+        State.pas = parseInt(e.target.value, 10);
+        // Evitar que PAS sea menor que PAD
+        if (State.pas < State.pad) {
+          State.pad = State.pas - 10;
+          sPad.value = State.pad;
+          document.getElementById('val-display-pad').innerText = `${State.pad} mmHg`;
+        }
+        document.getElementById('val-display-pas').innerText = `${State.pas} mmHg`;
+        updateNumericDisplays();
+      });
+
+      sPad.addEventListener('input', (e) => {
+        State.pad = parseInt(e.target.value, 10);
+        // Evitar que PAD sea mayor que PAS
+        if (State.pad > State.pas) {
+          State.pas = State.pad + 10;
+          sPas.value = State.pas;
+          document.getElementById('val-display-pas').innerText = `${State.pas} mmHg`;
+        }
+        document.getElementById('val-display-pad').innerText = `${State.pad} mmHg`;
+        updateNumericDisplays();
+      });
+
+      sSpo2.addEventListener('input', (e) => {
+        State.spo2 = parseInt(e.target.value, 10);
+        document.getElementById('val-display-spo2').innerText = `${State.spo2} %`;
+        updateNumericDisplays();
+      });
+
+      sRr.addEventListener('input', (e) => {
+        State.rr = parseInt(e.target.value, 10);
+        document.getElementById('val-display-rr').innerText = `${State.rr} rpm`;
+        updateNumericDisplays();
+      });
+
+      // Umbrales de alarma configurables
+      document.getElementById('input-lim-fc-min').addEventListener('change', (e) => {
+        State.limits.hrMin = parseInt(e.target.value, 10) || 50;
+        document.getElementById('lim-fc-min').innerText = State.limits.hrMin;
+      });
+      document.getElementById('input-lim-fc-max').addEventListener('change', (e) => {
+        State.limits.hrMax = parseInt(e.target.value, 10) || 120;
+        document.getElementById('lim-fc-max').innerText = State.limits.hrMax;
+      });
+      document.getElementById('input-lim-pam-min').addEventListener('change', (e) => {
+        State.limits.pamMin = parseInt(e.target.value, 10) || 65;
+        document.getElementById('lim-pam-min').innerText = State.limits.pamMin;
+      });
+      document.getElementById('input-lim-spo2-min').addEventListener('change', (e) => {
+        State.limits.spo2Min = parseInt(e.target.value, 10) || 90;
+        document.getElementById('lim-spo2-min').innerText = State.limits.spo2Min;
+      });
+    }
+
+    // --- CONTROLES DE LA BARRA SUPERIOR (AUDIO, SILENCIO, FREEZE) ---
+    function setupHeaderControls() {
+      // Audio ON / OFF
+      const btnAudio = document.getElementById('btn-toggle-audio');
+      btnAudio.addEventListener('click', () => {
+        initAudioContext();
+        State.audioEnabled = !State.audioEnabled;
+        const icon = document.getElementById('audio-icon');
+        const text = document.getElementById('audio-text');
+        if (State.audioEnabled) {
+          icon.innerText = '🔊';
+          text.innerText = 'Sonido: ON';
+          btnAudio.className = 'flex items-center space-x-1.5 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-500/80 text-emerald-300 px-2.5 py-1.5 rounded transition';
+        } else {
+          icon.innerText = '🔇';
+          text.innerText = 'Sonido: OFF';
+          btnAudio.className = 'flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 border border-slate-600 px-2.5 py-1.5 rounded transition';
+        }
+      });
+
+      // Silenciar Alarma 120s
+      const btnSilence = document.getElementById('btn-silence-alarm');
+      btnSilence.addEventListener('click', () => {
+        initAudioContext();
+        State.audioSilencedUntil = Date.now() + 120000;
+        const silenceText = document.getElementById('silence-text');
+        silenceText.innerText = 'Silenciado (120s)';
+      });
+
+      // Congelar Trazado (Freeze)
+      const btnFreeze = document.getElementById('btn-freeze');
+      const freezeIndicator = document.getElementById('freeze-indicator');
+      btnFreeze.addEventListener('click', () => {
+        State.isFrozen = !State.isFrozen;
+        const text = document.getElementById('freeze-text');
+        if (State.isFrozen) {
+          text.innerText = 'Reanudar';
+          freezeIndicator.classList.remove('hidden');
+          btnFreeze.className = 'flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-black font-bold px-2.5 py-1.5 rounded transition';
+        } else {
+          text.innerText = 'Congelar';
+          freezeIndicator.classList.add('hidden');
+          btnFreeze.className = 'flex items-center space-x-1.5 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/60 text-indigo-300 px-2.5 py-1.5 rounded transition';
+        }
+      });
+    }
+
+    // --- MANEJO DE PESTAÑAS (TABS) ---
+    function switchTab(targetId) {
+      const tabs = document.querySelectorAll('.nav-tab');
+      const panes = document.querySelectorAll('.tab-pane');
+
+      panes.forEach(pane => {
+        if (pane.id === targetId) {
+          pane.classList.remove('hidden');
+        } else {
+          pane.classList.add('hidden');
+        }
+      });
+
+      tabs.forEach(tab => {
+        if (tab.getAttribute('data-target') === targetId) {
+          tab.classList.add('border-emerald-500', 'text-emerald-400', 'bg-slate-900/50', 'active-tab');
+          tab.classList.remove('border-transparent', 'text-slate-400');
+        } else {
+          tab.classList.remove('border-emerald-500', 'text-emerald-400', 'bg-slate-900/50', 'active-tab');
+          tab.classList.add('border-transparent', 'text-slate-400');
+        }
+      });
+
+      // Si volvemos a la pestaña del monitor, ajustar tamaño del canvas
+      if (targetId === 'tab-monitor') {
+        setTimeout(resizeCanvas, 50);
+      }
+    }
+
+    function setupTabNavigation() {
+      const tabs = document.querySelectorAll('.nav-tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          const target = tab.getAttribute('data-target');
+          switchTab(target);
+        });
+      });
+    }
+
+    // --- INICIALIZACIÓN COMPLETA AL CARGAR LA PÁGINA ---
+    window.onload = function () {
+      resizeCanvas();
+      setupSliderListeners();
+      setupHeaderControls();
+      setupTabNavigation();
+      updateClock();
+      updateNumericDisplays();
+      evaluateAlarms();
+
+      // Iniciar bucle de animación 60 FPS
+      requestAnimationFrame(renderLoop);
+    };
+  </script>
+</body>
+</html>
